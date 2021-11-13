@@ -74,9 +74,22 @@ class TestToyotaSafety(common.PandaSafetyTest, common.InterceptorSafetyTest,
   # Toyota gas gains are the same
   def _interceptor_msg(self, gas, addr):
     to_send = make_msg(0, addr, 6)
-    to_send[0].RDLR = ((gas & 0xff) << 8) | ((gas & 0xff00) >> 8) | \
-                      ((gas & 0xff) << 24) | ((gas & 0xff00) << 8)
+    to_send[0].data[0] = (gas & 0xFF00) >> 8
+    to_send[0].data[1] = gas & 0xFF
+    to_send[0].data[2] = (gas & 0xFF00) >> 8
+    to_send[0].data[3] = gas & 0xFF
     return to_send
+
+  def test_block_aeb(self):
+    for controls_allowed in (True, False):
+      for bad in (True, False):
+        for _ in range(10):
+          self.safety.set_controls_allowed(controls_allowed)
+          dat = [random.randint(1, 255) for _ in range(7)]
+          if not bad:
+            dat = [0]*6 + dat[-1:]
+          msg = common.package_can_msg([0x283, 0, bytes(dat),  0])
+          self.assertEqual(not bad, self._tx(msg))
 
   def test_accel_actuation_limits(self):
     limits = ((MIN_ACCEL, MAX_ACCEL, UNSAFE_MODE.DEFAULT),
@@ -122,7 +135,10 @@ class TestToyotaSafety(common.PandaSafetyTest, common.InterceptorSafetyTest,
       if msg == "pcm":
         to_push = self._pcm_status_msg(True)
       self.assertTrue(self._rx(to_push))
-      to_push[0].RDHR = 0
+      to_push[0].data[4] = 0
+      to_push[0].data[5] = 0
+      to_push[0].data[6] = 0
+      to_push[0].data[7] = 0
       self.assertFalse(self._rx(to_push))
       self.assertFalse(self.safety.get_controls_allowed())
 
