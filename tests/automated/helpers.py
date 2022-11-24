@@ -19,9 +19,6 @@ GEN2_HW_TYPES = [Panda.HW_TYPE_BLACK_PANDA, Panda.HW_TYPE_UNO] + H7_HW_TYPES
 GPS_HW_TYPES = [Panda.HW_TYPE_GREY_PANDA, Panda.HW_TYPE_BLACK_PANDA, Panda.HW_TYPE_UNO]
 PEDAL_SERIAL = 'none'
 JUNGLE_SERIAL = os.getenv("PANDAS_JUNGLE")
-PANDAS_EXCLUDE = []
-if os.getenv("PANDAS_EXCLUDE"):
-  PANDAS_EXCLUDE = os.getenv("PANDAS_EXCLUDE").strip().split(" ")
 
 # Enable fault debug
 faulthandler.enable(all_threads=False)
@@ -37,11 +34,10 @@ def init_panda_serials():
   panda_jungle.set_panda_power(True)
   time.sleep(5)
   for serial in Panda.list():
-    if serial not in PANDAS_EXCLUDE:
-      p = Panda(serial=serial)
-      _panda_serials.append((serial, p.get_type()))
-      p.close()
-  print(f"Found {len(_panda_serials)} pandas")
+    p = Panda(serial=serial)
+    _panda_serials.append((serial, p.get_type()))
+    p.close()
+  print('Found', str(len(_panda_serials)), 'pandas')
 init_panda_serials()
 
 # Panda providers

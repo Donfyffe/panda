@@ -28,21 +28,21 @@ AddrCheckStruct gm_addr_checks[] = {
   {.msg = {{388, 0, 8, .expected_timestep = 100000U}, { 0 }, { 0 }}},
   {.msg = {{842, 0, 5, .expected_timestep = 100000U}, { 0 }, { 0 }}},
   {.msg = {{481, 0, 7, .expected_timestep = 100000U}, { 0 }, { 0 }}},
-  {.msg = {{201, 0, 8, .expected_timestep = 100000U}, { 0 }, { 0 }}},
-  {.msg = {{452, 0, 8, .expected_timestep = 100000U}, { 0 }, { 0 }}},
+  {.msg = {{241, 0, 6, .expected_timestep = 100000U}, { 0 }, { 0 }}},
+  {.msg = {{417, 0, 7, .expected_timestep = 100000U}, { 0 }, { 0 }}},
 };
 #define GM_RX_CHECK_LEN (sizeof(gm_addr_checks) / sizeof(gm_addr_checks[0]))
 addr_checks gm_rx_checks = {gm_addr_checks, GM_RX_CHECK_LEN};
 
-static int gm_rx_hook(CANPacket_t *to_push) {
+static int gm_rx_hook(CAN_FIFOMailBox_TypeDef *to_push) {
 
   bool valid = addr_safety_check(to_push, &gm_rx_checks, NULL, NULL, NULL);
 
-  if (valid && (GET_BUS(to_push) == 0U)) {
+  if (valid && (GET_BUS(to_push) == 0)) {
     int addr = GET_ADDR(to_push);
 
     if (addr == 388) {
-      int torque_driver_new = ((GET_BYTE(to_push, 6) & 0x7U) << 8) | GET_BYTE(to_push, 7);
+      int torque_driver_new = ((GET_BYTE(to_push, 6) & 0x7) << 8) | GET_BYTE(to_push, 7);
       torque_driver_new = to_signed(torque_driver_new, 11);
       // update array of samples
       update_sample(&torque_driver, torque_driver_new);
@@ -56,7 +56,7 @@ static int gm_rx_hook(CANPacket_t *to_push) {
 
     // ACC steering wheel buttons
     if (addr == 481) {
-      int button = (GET_BYTE(to_push, 5) & 0x70U) >> 4;
+      int button = (GET_BYTE(to_push, 5) & 0x70) >> 4;
       switch (button) {
         case 2:  // resume
         case 3:  // set
@@ -70,17 +70,20 @@ static int gm_rx_hook(CANPacket_t *to_push) {
       }
     }
 
-    if (addr == 201) {
-      brake_pressed = GET_BIT(to_push, 40U) != 0U;
+    // speed > 0
+    if (addr == 241) {
+      // Brake pedal's potentiometer returns near-zero reading
+      // even when pedal is not pressed
+      brake_pressed = GET_BYTE(to_push, 1) >= 10;
     }
 
-    if (addr == 452) {
-      gas_pressed = GET_BYTE(to_push, 5) != 0U;
+    if (addr == 417) {
+      gas_pressed = GET_BYTE(to_push, 6) != 0;
     }
 
     // exit controls on regen paddle
     if (addr == 189) {
-      bool regen = GET_BYTE(to_push, 0) & 0x20U;
+      bool regen = GET_BYTE(to_push, 0) & 0x20;
       if (regen) {
         controls_allowed = 0;
       }
@@ -101,7 +104,7 @@ static int gm_rx_hook(CANPacket_t *to_push) {
 // else
 //     block all commands that produce actuation
 
-static int gm_tx_hook(CANPacket_t *to_send) {
+static int gm_tx_hook(CAN_FIFOMailBox_TypeDef *to_send) {
 
   int tx = 1;
   int addr = GET_ADDR(to_send);
