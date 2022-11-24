@@ -1,23 +1,30 @@
-const addr_checks default_rx_checks = {
-  .check = NULL,
-  .len = 0,
+static void send_mdps_enable_speed(CAN_FIFOMailBox_TypeDef *to_fwd){
+  bool is_speed_unit_mph = GET_BYTE(to_fwd, 2) & 0x2;
+  
+  int mdps_cutoff_speed = is_speed_unit_mph ? 76 : 120;  // factor of 2 from dbc
+  
+  int veh_clu_speed = GET_BYTE(to_fwd, 1) | (GET_BYTE(to_fwd, 2) & 0x1) << 8;
+  
+  if (veh_clu_speed < mdps_cutoff_speed) {
+    to_fwd->RDLR &= 0xFFFE00FF;
+    to_fwd->RDLR |= mdps_cutoff_speed << 8;
+  }
 };
 
-int default_rx_hook(CANPacket_t *to_push) {
+int default_rx_hook(CAN_FIFOMailBox_TypeDef *to_push) {
   UNUSED(to_push);
   return true;
 }
 
 // *** no output safety mode ***
 
-static const addr_checks* nooutput_init(int16_t param) {
+static void nooutput_init(int16_t param) {
   UNUSED(param);
   controls_allowed = false;
   relay_malfunction_reset();
-  return &default_rx_checks;
 }
 
-static int nooutput_tx_hook(CANPacket_t *to_send) {
+static int nooutput_tx_hook(CAN_FIFOMailBox_TypeDef *to_send) {
   UNUSED(to_send);
   return false;
 }
@@ -29,10 +36,20 @@ static int nooutput_tx_lin_hook(int lin_num, uint8_t *data, int len) {
   return false;
 }
 
-static int default_fwd_hook(int bus_num, CANPacket_t *to_fwd) {
-  UNUSED(bus_num);
-  UNUSED(to_fwd);
-  return -1;
+static int default_fwd_hook(int bus_num, CAN_FIFOMailBox_TypeDef *to_fwd) {
+  int addr = GET_ADDR(to_fwd);
+  int bus_fwd = -1;
+  
+  if (bus_num == 0) {
+    bus_fwd = 2;
+    if (addr == 1265) {
+      send_mdps_enable_speed(to_fwd);
+    }
+  }
+  if (bus_num == 2) {
+    bus_fwd = 0;
+  }
+  return bus_fwd;
 }
 
 const safety_hooks nooutput_hooks = {
@@ -45,19 +62,13 @@ const safety_hooks nooutput_hooks = {
 
 // *** all output safety mode ***
 
-// Enables passthrough mode where relay is open and bus 0 gets forwarded to bus 2 and vice versa
-const uint16_t ALLOUTPUT_PARAM_PASSTHROUGH = 1;
-bool alloutput_passthrough = false;
-
-static const addr_checks* alloutput_init(int16_t param) {
+static void alloutput_init(int16_t param) {
   UNUSED(param);
-  alloutput_passthrough = GET_FLAG(param, ALLOUTPUT_PARAM_PASSTHROUGH);
   controls_allowed = true;
   relay_malfunction_reset();
-  return &default_rx_checks;
 }
 
-static int alloutput_tx_hook(CANPacket_t *to_send) {
+static int alloutput_tx_hook(CAN_FIFOMailBox_TypeDef *to_send) {
   UNUSED(to_send);
   return true;
 }
@@ -69,26 +80,10 @@ static int alloutput_tx_lin_hook(int lin_num, uint8_t *data, int len) {
   return true;
 }
 
-static int alloutput_fwd_hook(int bus_num, CANPacket_t *to_fwd) {
-  UNUSED(to_fwd);
-  int bus_fwd = -1;
-
-  if (alloutput_passthrough) {
-    if (bus_num == 0) {
-      bus_fwd = 2;
-    }
-    if (bus_num == 2) {
-      bus_fwd = 0;
-    }
-  }
-
-  return bus_fwd;
-}
-
 const safety_hooks alloutput_hooks = {
   .init = alloutput_init,
   .rx = default_rx_hook,
   .tx = alloutput_tx_hook,
   .tx_lin = alloutput_tx_lin_hook,
-  .fwd = alloutput_fwd_hook,
+  .fwd = default_fwd_hook,
 };
